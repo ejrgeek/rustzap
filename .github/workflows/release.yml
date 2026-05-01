@@ -40,7 +40,7 @@ jobs:
           cp ../src-tauri/icons/128x128.png build/files/icon.png
           cp br.com.erlondnjr.rustzap.desktop build/files/
           cp br.com.erlondnjr.rustzap.metainfo.xml build/files/
-          flatpak-builder --force-clean build-dir br.com.erlondnjr.rustzap.yml --repo=repo
+          flatpak-builder --force-clean build-dir br.com.erlondnjr.rustzap.local.yml --repo=repo
           flatpak build-bundle repo rustzap.flatpak br.com.erlondnjr.rustzap
 
       # Assinatura GPG
@@ -103,12 +103,10 @@ jobs:
       - name: Checkout do código fonte
         uses: actions/checkout@v4
 
-      - name: Substitui a tag placeholder no manifesto Flatpak
+      - name: Substitui a tag placeholder no manifesto Flathub
         run: |
-          # Define o caminho do manifesto
-          FILE="flatpak/br.com.erlondnjr.rustzap.yml"
+          FILE="flatpak/br.com.erlondnjr.rustzap.flathub.yml"
           TAG="${{ github.ref_name }}"
-          # Exibe para debug
           echo "Substituindo TAG_DA_VERSION por '$TAG' no arquivo $FILE"
           sed -i "s/TAG_DA_VERSION/${TAG}/g" "$FILE"
           head -20 "$FILE"
@@ -116,7 +114,8 @@ jobs:
       - name: Prepara os arquivos para o Flathub
         run: |
           mkdir -p flathub-files/br.com.erlondnjr.rustzap
-          cp flatpak/br.com.erlondnjr.rustzap.yml flathub-files/br.com.erlondnjr.rustzap/
+          # Copia o manifesto Flathub renomeando para o nome final esperado
+          cp flatpak/br.com.erlondnjr.rustzap.flathub.yml flathub-files/br.com.erlondnjr.rustzap/br.com.erlondnjr.rustzap.yml
           cp flatpak/br.com.erlondnjr.rustzap.desktop flathub-files/br.com.erlondnjr.rustzap/
           cp flatpak/br.com.erlondnjr.rustzap.metainfo.xml flathub-files/br.com.erlondnjr.rustzap/
           cp src-tauri/icons/128x128.png flathub-files/br.com.erlondnjr.rustzap/icon.png
@@ -127,12 +126,12 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git clone https://x-access-token:${{ secrets.FLATHUB_TOKEN }}@github.com/ejrgeek/flathub.git flathub-fork
+          git clone --branch master https://x-access-token:${{ secrets.FLATHUB_TOKEN }}@github.com/ejrgeek/flathub.git flathub-fork
           cd flathub-fork
           cp -r ../flathub-files/br.com.erlondnjr.rustzap .
           git add br.com.erlondnjr.rustzap
           git commit -m "Update RustZap to ${{ github.ref_name }}"
-          git push origin main
+          git push origin master
           gh pr create \
             --repo flathub/flathub \
             --head ejrgeek:master \
