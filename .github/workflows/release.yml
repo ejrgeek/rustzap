@@ -43,12 +43,12 @@ jobs:
           flatpak-builder --force-clean build-dir br.com.erlondnjr.rustzap.local.yml --repo=repo
           flatpak build-bundle repo rustzap.flatpak br.com.erlondnjr.rustzap
 
-      # Assinatura GPG
+      # Assinatura GPG (opcional – só roda se as secrets existirem)
       - name: Import GPG key and sign
-        if: env.GPG_PRIVATE_KEY != ''
+        if: env.GPG_PRIVATE_KEY != '' && env.GPG_PASSPHRASE != ''
         env:
-          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
-          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY || '' }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE || '' }}
         run: |
           echo "$GPG_PRIVATE_KEY" | gpg --batch --import
           echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
@@ -60,37 +60,52 @@ jobs:
           done
           cd -
           cd flatpak
-          gpg --batch --pinentry-mode loopback \
+          [ -f rustzap.flatpak ] && gpg --batch --pinentry-mode loopback \
             --passphrase "$GPG_PASSPHRASE" --detach-sign rustzap.flatpak
           cd ..
 
-      # Upload artifacts
+      # Upload artifacts (usamos um script para coletar apenas arquivos existentes)
+      - name: Collect files for release
+        id: collect_files
+        run: |
+          cd src-tauri/target/release/bundle
+          FILE_LIST=""
+          for f in deb/*.deb appimage/*.AppImage; do
+            [ -f "$f" ] && FILE_LIST="$FILE_LIST,src-tauri/target/release/bundle/$f"
+          done
+          cd -
+          [ -f flatpak/rustzap.flatpak ] && FILE_LIST="$FILE_LIST,flatpak/rustzap.flatpak"
+          # Remove a vírgula inicial
+          FILE_LIST="${FILE_LIST#,}"
+          echo "FILES=$FILE_LIST" >> $GITHUB_OUTPUT
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: all-packages
           path: |
             src-tauri/target/release/bundle/deb/*.deb
-            src-tauri/target/release/bundle/deb/*.deb.asc
             src-tauri/target/release/bundle/appimage/*.AppImage
-            src-tauri/target/release/bundle/appimage/*.AppImage.asc
             flatpak/rustzap.flatpak
+            # arquivos .asc serão incluídos automaticamente se existirem
+            src-tauri/target/release/bundle/deb/*.asc
+            src-tauri/target/release/bundle/appimage/*.asc
             flatpak/rustzap.flatpak.asc
 
-      # Cria release no GitHub
+      # Cria release no GitHub (usando token com permissão de repo)
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           name: "RustZap ${{ github.ref_name }}"
           files: |
             src-tauri/target/release/bundle/deb/*.deb
-            src-tauri/target/release/bundle/deb/*.deb.asc
             src-tauri/target/release/bundle/appimage/*.AppImage
-            src-tauri/target/release/bundle/appimage/*.AppImage.asc
             flatpak/rustzap.flatpak
+            src-tauri/target/release/bundle/deb/*.asc
+            src-tauri/target/release/bundle/appimage/*.asc
             flatpak/rustzap.flatpak.asc
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
 
   # ------------------------------------------------------------------
   # Job separado para push no fork do Flathub (executa em paralelo)
@@ -114,7 +129,6 @@ jobs:
       - name: Prepara os arquivos para o Flathub
         run: |
           mkdir -p flathub-files/br.com.erlondnjr.rustzap
-          # Copia o manifesto Flathub renomeando para o nome final esperado
           cp flatpak/br.com.erlondnjr.rustzap.flathub.yml flathub-files/br.com.erlondnjr.rustzap/br.com.erlondnjr.rustzap.yml
           cp flatpak/br.com.erlondnjr.rustzap.desktop flathub-files/br.com.erlondnjr.rustzap/
           cp flatpak/br.com.erlondnjr.rustzap.metainfo.xml flathub-files/br.com.erlondnjr.rustzap/
