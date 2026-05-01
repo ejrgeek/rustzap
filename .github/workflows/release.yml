@@ -111,44 +111,46 @@ jobs:
   # Job separado para push no fork do Flathub (executa em paralelo)
   # ------------------------------------------------------------------
   flathub-submission:
-      needs: build-and-release
-      if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-      runs-on: ubuntu-24.04
-      steps:
-        - name: Checkout do código fonte
-          uses: actions/checkout@v4
-  
-        - name: Substitui a tag placeholder no manifesto Flathub
-          run: |
-            FILE="flatpak/br.com.erlondnjr.rustzap.flathub.yml"
-            TAG="${{ github.ref_name }}"
-            echo "Substituindo TAG_DA_VERSION por '$TAG' no arquivo $FILE"
-            sed -i "s/TAG_DA_VERSION/${TAG}/g" "$FILE"
-            head -20 "$FILE"
-  
-        - name: Prepara os arquivos para o Flathub
-          run: |
-            mkdir -p flathub-files/br.com.erlondnjr.rustzap
-            cp flatpak/br.com.erlondnjr.rustzap.flathub.yml flathub-files/br.com.erlondnjr.rustzap/br.com.erlondnjr.rustzap.yml
-            cp flatpak/br.com.erlondnjr.rustzap.desktop flathub-files/br.com.erlondnjr.rustzap/
-            cp flatpak/br.com.erlondnjr.rustzap.metainfo.xml flathub-files/br.com.erlondnjr.rustzap/
-            cp src-tauri/icons/128x128.png flathub-files/br.com.erlondnjr.rustzap/icon.png
-  
-        - name: Clone do fork do Flathub e criação do PR
-          env:
-            FLATHUB_TOKEN: ${{ secrets.FLATHUB_TOKEN }}
-          run: |
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git clone --branch master https://x-access-token:${FLATHUB_TOKEN}@github.com/ejrgeek/flathub.git flathub-fork
-            cp -r flathub-files/br.com.erlondnjr.rustzap flathub-fork/
-            cd flathub-fork
-            git add br.com.erlondnjr.rustzap
-            git commit -m "Update RustZap to ${{ github.ref_name }}"
-            git push origin master
-            gh pr create \
-              --repo flathub/flathub \
-              --head ejrgeek:master \
-              --title "Update RustZap to ${{ github.ref_name }}" \
-              --body "Automated release of RustZap ${{ github.ref_name }}" \
-              --token "$FLATHUB_TOKEN"
+    needs: build-and-release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout do código fonte
+        uses: actions/checkout@v4
+
+      - name: Substitui a tag placeholder no manifesto Flathub
+        run: |
+          FILE="flatpak/br.com.erlondnjr.rustzap.flathub.yml"
+          TAG="${{ github.ref_name }}"
+          echo "Substituindo TAG_DA_VERSION por '$TAG' no arquivo $FILE"
+          sed -i "s/TAG_DA_VERSION/${TAG}/g" "$FILE"
+          head -20 "$FILE"
+
+      - name: Prepara os arquivos para o Flathub
+        run: |
+          mkdir -p flathub-files/br.com.erlondnjr.rustzap
+          cp flatpak/br.com.erlondnjr.rustzap.flathub.yml flathub-files/br.com.erlondnjr.rustzap/br.com.erlondnjr.rustzap.yml
+          cp flatpak/br.com.erlondnjr.rustzap.desktop flathub-files/br.com.erlondnjr.rustzap/
+          cp flatpak/br.com.erlondnjr.rustzap.metainfo.xml flathub-files/br.com.erlondnjr.rustzap/
+          cp src-tauri/icons/128x128.png flathub-files/br.com.erlondnjr.rustzap/icon.png
+
+      - name: Clone do fork do Flathub e criação do PR
+        env:
+          FLATHUB_TOKEN: ${{ secrets.FLATHUB_TOKEN }}
+        run: |
+          # Configura identidade globalmente para evitar o erro
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          git clone --branch master https://x-access-token:${FLATHUB_TOKEN}@github.com/ejrgeek/flathub.git flathub-fork
+          cp -r flathub-files/br.com.erlondnjr.rustzap flathub-fork/
+          cd flathub-fork
+          git add br.com.erlondnjr.rustzap
+          git commit -m "Update RustZap to ${{ github.ref_name }}"
+          git push origin master
+          gh pr create \
+            --repo flathub/flathub \
+            --head ejrgeek:master \
+            --title "Update RustZap to ${{ github.ref_name }}" \
+            --body "Automated release of RustZap ${{ github.ref_name }}" \
+            --token "$FLATHUB_TOKEN"
