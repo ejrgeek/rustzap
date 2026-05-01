@@ -1,0 +1,29 @@
+[package]
+name = "rustzap"
+version = "0.1.0"
+license = "MIT"
+description = "A Rust WhatsApp Tauri App"
+authors = ["Erlon Jr. <ejrgeek@gmail.com>"]
+homepage = "https://github.com/ejrgeek/rustzap"
+repository = "https://github.com/ejrgeek/rustzap"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-window-state = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+notify-rust = "4"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
+[profile.release]
+strip = true
+lto = true
+opt-level = "s"
