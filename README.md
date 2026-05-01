@@ -69,4 +69,35 @@ Binário isolado:
 ./src-tauri/target/release/rustzap
 ```
 
+## Build Flatpak
+
+#### Localmente
+
+Instale as ferramentas:
+```bash
+sudo apt install flatpak-builder
+flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+flatpak install --user -y org.gnome.Platform//46 org.gnome.Sdk//46
+```
+
+Compile o app:
+```bash
+cargo tauri build
+```
+
+Execute o script
+```bash
+./flatpak/build-flatpak.sh
+```
+
+
+#### GitHub Actions
+
+
+
+```bash
+
+```
+
+
 ## Licença MIT

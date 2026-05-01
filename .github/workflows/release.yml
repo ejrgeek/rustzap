@@ -1,4 +1,4 @@
-name: Build and Sign
+name: Release & Flathub
 
 on:
   push:
@@ -7,27 +7,45 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  build-and-release:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Install system dependencies
+      - name: Install system deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
-            libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libfuse2
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev build-essential libssl-dev libgtk-3-dev \
+            libayatana-appindicator3-dev librsvg2-dev libfuse2 flatpak-builder
+          flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user -y org.gnome.Platform//46 org.gnome.Sdk//46
 
-      - name: Setup Rust toolchain
+      - name: Setup Rust
         run: rustup default stable
 
       - name: Install Tauri CLI
         run: cargo install tauri-cli --version "^2"
 
-      - name: Build Tauri app
+      - name: Build Tauri (deb, AppImage, bin)
         run: cargo tauri build
 
-      - name: Import GPG key
+      # Flatpak build
+      - name: Build Flatpak
+        run: |
+          cd flatpak
+          mkdir -p build/files
+          cp ../src-tauri/target/release/rustzap build/files/
+          cp ../src-tauri/icons/128x128.png build/files/icon.png
+          cp br.com.erlondnjr.rustzap.desktop build/files/
+          cp br.com.erlondnjr.rustzap.metainfo.xml build/files/
+          flatpak-builder --force-clean build-dir br.com.erlondnjr.rustzap.yml --repo=repo
+          flatpak build-bundle repo rustzap.flatpak br.com.erlondnjr.rustzap
+
+      # Assinatura GPG
+      - name: Import GPG key and sign
+        if: env.GPG_PRIVATE_KEY != ''
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
@@ -35,36 +53,90 @@ jobs:
           echo "$GPG_PRIVATE_KEY" | gpg --batch --import
           echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
           gpgconf --reload gpg-agent
-
-      - name: Sign packages
-        env:
-          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
-        run: |
           cd src-tauri/target/release/bundle
           for pkg in deb/*.deb appimage/*.AppImage; do
-            if [ -f "$pkg" ]; then
-              gpg --batch --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" --detach-sign "$pkg"
-            fi
+            [ -f "$pkg" ] && gpg --batch --pinentry-mode loopback \
+              --passphrase "$GPG_PASSPHRASE" --detach-sign "$pkg"
           done
+          cd -
+          cd flatpak
+          gpg --batch --pinentry-mode loopback \
+            --passphrase "$GPG_PASSPHRASE" --detach-sign rustzap.flatpak
+          cd ..
 
+      # Upload artifacts
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: rustzap-packages
+          name: all-packages
           path: |
             src-tauri/target/release/bundle/deb/*.deb
             src-tauri/target/release/bundle/deb/*.deb.asc
             src-tauri/target/release/bundle/appimage/*.AppImage
             src-tauri/target/release/bundle/appimage/*.AppImage.asc
+            flatpak/rustzap.flatpak
+            flatpak/rustzap.flatpak.asc
 
-      - name: Create Release (if tag)
-        if: startsWith(github.ref, 'refs/tags/')
+      # Cria release no GitHub
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
+          name: "RustZap ${{ github.ref_name }}"
           files: |
             src-tauri/target/release/bundle/deb/*.deb
             src-tauri/target/release/bundle/deb/*.deb.asc
             src-tauri/target/release/bundle/appimage/*.AppImage
             src-tauri/target/release/bundle/appimage/*.AppImage.asc
+            flatpak/rustzap.flatpak
+            flatpak/rustzap.flatpak.asc
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ------------------------------------------------------------------
+  # Job separado para push no fork do Flathub (executa em paralelo)
+  # ------------------------------------------------------------------
+  flathub-submission:
+    needs: build-and-release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout do código fonte
+        uses: actions/checkout@v4
+
+      - name: Substitui a tag placeholder no manifesto Flatpak
+        run: |
+          # Define o caminho do manifesto
+          FILE="flatpak/br.com.erlondnjr.rustzap.yml"
+          TAG="${{ github.ref_name }}"
+          # Exibe para debug
+          echo "Substituindo TAG_DA_VERSION por '$TAG' no arquivo $FILE"
+          sed -i "s/TAG_DA_VERSION/${TAG}/g" "$FILE"
+          head -20 "$FILE"
+
+      - name: Prepara os arquivos para o Flathub
+        run: |
+          mkdir -p flathub-files/br.com.erlondnjr.rustzap
+          cp flatpak/br.com.erlondnjr.rustzap.yml flathub-files/br.com.erlondnjr.rustzap/
+          cp flatpak/br.com.erlondnjr.rustzap.desktop flathub-files/br.com.erlondnjr.rustzap/
+          cp flatpak/br.com.erlondnjr.rustzap.metainfo.xml flathub-files/br.com.erlondnjr.rustzap/
+          cp src-tauri/icons/128x128.png flathub-files/br.com.erlondnjr.rustzap/icon.png
+
+      - name: Clone do fork do Flathub e criação do PR
+        env:
+          FLATHUB_TOKEN: ${{ secrets.FLATHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git clone https://x-access-token:${{ secrets.FLATHUB_TOKEN }}@github.com/ejrgeek/flathub.git flathub-fork
+          cd flathub-fork
+          cp -r ../flathub-files/br.com.erlondnjr.rustzap .
+          git add br.com.erlondnjr.rustzap
+          git commit -m "Update RustZap to ${{ github.ref_name }}"
+          git push origin main
+          gh pr create \
+            --repo flathub/flathub \
+            --head ejrgeek:master \
+            --title "Update RustZap to ${{ github.ref_name }}" \
+            --body "Automated release of RustZap ${{ github.ref_name }}" \
+            --token "$FLATHUB_TOKEN"
+        working-directory: flathub-files
