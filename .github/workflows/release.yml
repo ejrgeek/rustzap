@@ -165,6 +165,7 @@ jobs:
             gh pr create \
               --repo flathub/flathub \
               --head ejrgeek:master \
+              --base new-pr \
               --title "Update RustZap to ${{ github.ref_name }}" \
               --body "Automated release of RustZap ${{ github.ref_name }}"
           fi
